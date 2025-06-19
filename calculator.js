@@ -520,10 +520,10 @@ function calculateResults() {
         const retentionRate = getValue('retentionRate');
         const otherExpensesStr = document.getElementById('otherExpenses')?.value || '0';
         const otherExpensesAmount = parseFloat(removeCommas(otherExpensesStr)) || 0;
-        const employmentTaxRate = getValue('employmentTaxRate');
-        const scorecardBonusRate = getValue('scorecardBonusRate');
-        const pcEligibleRate = getValue('pcEligibleRate');
-        const lifeEligibleRate = getValue('lifeEligibleRate');
+        const employmentTaxRate = getValue('employmentTaxRate') || DEFAULT_VALUES.EMPLOYMENT_TAX_RATE;
+        const scorecardBonusRate = getValue('scorecardBonusRate') || DEFAULT_VALUES.SCORECARD_BONUS_RATE;
+        const pcEligibleRate = getValue('pcEligibleRate') || DEFAULT_VALUES.PC_ELIGIBLE_RATE;
+        const lifeEligibleRate = getValue('lifeEligibleRate') || DEFAULT_VALUES.LIFE_ELIGIBLE_RATE;
 
         // Calculate commissions using the summary function
         calculateSummary();
@@ -541,18 +541,8 @@ function calculateResults() {
         const { pcCommissions, lifeCommissions } = calculateCommissionsByCategory();
         
         // Calculate eligible commissions for each category
-        // Explicitly check for 0 values and handle them
-        let pcEligibleCommissions = 0;
-        let lifeEligibleCommissions = 0;
-        
-        if (pcEligibleRate > 0) {
-            pcEligibleCommissions = pcCommissions * (pcEligibleRate / 100);
-        }
-        
-        if (lifeEligibleRate > 0) {
-            lifeEligibleCommissions = lifeCommissions * (lifeEligibleRate / 100);
-        }
-        
+        const pcEligibleCommissions = pcCommissions * (pcEligibleRate / 100);
+        const lifeEligibleCommissions = lifeCommissions * (lifeEligibleRate / 100);
         const totalEligibleCommissions = pcEligibleCommissions + lifeEligibleCommissions;
         
         // Calculate expenses
@@ -562,37 +552,14 @@ function calculateResults() {
         const totalExpenses = totalCompensation + employmentTaxes + totalSupportCosts;
         
         // Calculate scorecard bonus using eligible commissions
-        let scorecardBonus = 0;
-        if (scorecardBonusRate > 0 && totalEligibleCommissions > 0) {
-            scorecardBonus = totalEligibleCommissions * (scorecardBonusRate / 100);
-        }
-        
+        const scorecardBonus = totalEligibleCommissions * (scorecardBonusRate / 100);
         const totalIncome = totalAnnualCommissions + scorecardBonus;
         
         // Calculate net
         const netROI = totalIncome - totalExpenses;
         
-        // Calculate future income (Years 2-5)
-        // Retention rate represents the % of business remaining after 5 years
-        // We assume linear decline from 100% in year 1 to retentionRate% in year 5
-        // Example: 80% retention means: Year 1=100%, Year 2=96%, Year 3=92%, Year 4=88%, Year 5=84%, Year 6=80%
-        // But we calculate for end of each year, so Year 2 starts at 96%, Year 5 ends at 80%
-        const retentionDeclinePerYear = (100 - retentionRate) / 5;
-        
-        // Calculate retention for each year
-        const year2Retention = 100 - (retentionDeclinePerYear * 2);
-        const year3Retention = 100 - (retentionDeclinePerYear * 3);
-        const year4Retention = 100 - (retentionDeclinePerYear * 4);
-        const year5Retention = retentionRate; // Final retention rate
-        
-        // Future income is based on commission revenue only (no scorecard bonus in years 2-5)
-        const futureIncomeYear2 = totalAnnualCommissions * (year2Retention / 100);
-        const futureIncomeYear3 = totalAnnualCommissions * (year3Retention / 100);
-        const futureIncomeYear4 = totalAnnualCommissions * (year4Retention / 100);
-        const futureIncomeYear5 = totalAnnualCommissions * (year5Retention / 100);
-        
-        // Total future income for years 2-5
-        const futureIncome = futureIncomeYear2 + futureIncomeYear3 + futureIncomeYear4 + futureIncomeYear5;
+        // Calculate projected revenue (commissions only, no bonus) with declining retention
+        const projectedRevenue = calculateProjectedRevenue(totalAnnualCommissions, retentionRate);
         
         // Update UI with calculated values
         updateResultsUI({
@@ -610,14 +577,36 @@ function calculateResults() {
             lifeEligibleCommissions,
             totalEligibleCommissions,
             scorecardBonus,
-            futureIncome,
-            retentionRate
+            projectedRevenue
         });
         
     } catch (error) {
         console.error('Error calculating results:', error);
         alert('An error occurred while calculating results. Please check your inputs and try again.');
     }
+}
+
+function calculateProjectedRevenue(baseCommissions, finalRetentionRate) {
+    // Year 1 is 100% retention
+    // Year 5 is the final retention rate
+    // Years 2-4 decline linearly
+    const retentionDecline = (100 - finalRetentionRate) / 4;
+    
+    let totalProjectedRevenue = 0;
+    
+    for (let year = 1; year <= 5; year++) {
+        let yearRetention;
+        if (year === 1) {
+            yearRetention = 100;
+        } else {
+            yearRetention = 100 - (retentionDecline * (year - 1));
+        }
+        
+        const yearRevenue = baseCommissions * (yearRetention / 100);
+        totalProjectedRevenue += yearRevenue;
+    }
+    
+    return totalProjectedRevenue;
 }
 
 function calculateCommissionsByCategory() {
@@ -671,112 +660,34 @@ function updateResultsUI(results) {
     setValue('detailAgentCommissions', results.totalAnnualCommissions);
     setValue('detailPCCommissions', results.pcCommissions);
     setValue('detailLifeCommissions', results.lifeCommissions);
-    setValue('detailPCEligible', results.pcEligibleCommissions);
-    setValue('detailLifeEligible', results.lifeEligibleCommissions);
-    setValue('detailEligibleCommissions', results.totalEligibleCommissions);
-    setValue('detailScorecardBonus', results.scorecardBonus);
-    setValue('futureProjection', results.futureIncome);
     
-    // Create the revenue chart
-    createRevenueChart(results.totalAnnualCommissions, results.retentionRate);
-}
-
-// Chart instance variable to track existing chart
-let revenueChartInstance = null;
-
-function createRevenueChart(annualCommissions, retentionRate) {
-    const canvas = document.getElementById('revenueChart');
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    
-    // Destroy existing chart if it exists
-    if (revenueChartInstance) {
-        revenueChartInstance.destroy();
+    // Handle 0% eligible rates - clear the dollar amounts if rate is 0
+    if (results.pcEligibleCommissions === 0) {
+        document.getElementById('detailPCEligible').textContent = '-';
+    } else {
+        setValue('detailPCEligible', results.pcEligibleCommissions);
     }
     
-    // Calculate retention for each year
-    const retentionDeclinePerYear = (100 - retentionRate) / 5;
-    const year2Retention = 100 - (retentionDeclinePerYear * 2);
-    const year3Retention = 100 - (retentionDeclinePerYear * 3);
-    const year4Retention = 100 - (retentionDeclinePerYear * 4);
-    const year5Retention = retentionRate;
+    if (results.lifeEligibleCommissions === 0) {
+        document.getElementById('detailLifeEligible').textContent = '-';
+    } else {
+        setValue('detailLifeEligible', results.lifeEligibleCommissions);
+    }
     
-    // Calculate revenue for each year
-    const year2Revenue = annualCommissions * (year2Retention / 100);
-    const year3Revenue = annualCommissions * (year3Retention / 100);
-    const year4Revenue = annualCommissions * (year4Retention / 100);
-    const year5Revenue = annualCommissions * (year5Retention / 100);
+    if (results.totalEligibleCommissions === 0) {
+        document.getElementById('detailEligibleCommissions').textContent = '-';
+    } else {
+        setValue('detailEligibleCommissions', results.totalEligibleCommissions);
+    }
     
-    // Create the chart
-    revenueChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Year 2', 'Year 3', 'Year 4', 'Year 5'],
-            datasets: [{
-                label: 'Annual Revenue',
-                data: [year2Revenue, year3Revenue, year4Revenue, year5Revenue],
-                backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                borderColor: 'rgba(16, 185, 129, 1)',
-                borderWidth: 2,
-                borderRadius: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: {
-                duration: 0
-            },
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
-                            }
-                            if (context.parsed.y !== null) {
-                                label += new Intl.NumberFormat('en-US', { 
-                                    style: 'currency', 
-                                    currency: 'USD',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0
-                                }).format(context.parsed.y);
-                            }
-                            return label;
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return new Intl.NumberFormat('en-US', { 
-                                style: 'currency', 
-                                currency: 'USD',
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0
-                            }).format(value);
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.05)'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
-            }
-        }
-    });
+    if (results.scorecardBonus === 0) {
+        document.getElementById('detailScorecardBonus').textContent = '-';
+    } else {
+        setValue('detailScorecardBonus', results.scorecardBonus);
+    }
+    
+    // Update projected revenue (5-year total)
+    setValue('futureProjection', results.projectedRevenue);
 }
 
 function exportResults() {
