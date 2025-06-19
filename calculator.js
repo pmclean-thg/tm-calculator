@@ -685,7 +685,7 @@ function updateResultsUI(results) {
 let revenueChartInstance = null;
 
 function createRevenueChart(annualCommissions, retentionRate) {
-    const ctx = document.getElementById('revenueChart');
+    const ctx = document.getElementById('revenueChart').getContext('2d');
     if (!ctx) return;
     
     // Destroy existing chart if it exists
