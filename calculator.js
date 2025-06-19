@@ -572,8 +572,27 @@ function calculateResults() {
         // Calculate net
         const netROI = totalIncome - totalExpenses;
         
-        // Calculate future income
-        const futureIncome = totalIncome * (retentionRate / 100);
+        // Calculate future income (Years 2-5)
+        // Retention rate represents the % of business remaining after 5 years
+        // We assume linear decline from 100% in year 1 to retentionRate% in year 5
+        // Example: 80% retention means: Year 1=100%, Year 2=96%, Year 3=92%, Year 4=88%, Year 5=84%, Year 6=80%
+        // But we calculate for end of each year, so Year 2 starts at 96%, Year 5 ends at 80%
+        const retentionDeclinePerYear = (100 - retentionRate) / 5;
+        
+        // Calculate retention for each year
+        const year2Retention = 100 - (retentionDeclinePerYear * 2);
+        const year3Retention = 100 - (retentionDeclinePerYear * 3);
+        const year4Retention = 100 - (retentionDeclinePerYear * 4);
+        const year5Retention = retentionRate; // Final retention rate
+        
+        // Future income is based on commission revenue only (no scorecard bonus in years 2-5)
+        const futureIncomeYear2 = totalAnnualCommissions * (year2Retention / 100);
+        const futureIncomeYear3 = totalAnnualCommissions * (year3Retention / 100);
+        const futureIncomeYear4 = totalAnnualCommissions * (year4Retention / 100);
+        const futureIncomeYear5 = totalAnnualCommissions * (year5Retention / 100);
+        
+        // Total future income for years 2-5
+        const futureIncome = futureIncomeYear2 + futureIncomeYear3 + futureIncomeYear4 + futureIncomeYear5;
         
         // Update UI with calculated values
         updateResultsUI({
@@ -591,7 +610,8 @@ function calculateResults() {
             lifeEligibleCommissions,
             totalEligibleCommissions,
             scorecardBonus,
-            futureIncome
+            futureIncome,
+            retentionRate
         });
         
     } catch (error) {
@@ -656,6 +676,105 @@ function updateResultsUI(results) {
     setValue('detailEligibleCommissions', results.totalEligibleCommissions);
     setValue('detailScorecardBonus', results.scorecardBonus);
     setValue('futureProjection', results.futureIncome);
+    
+    // Create the revenue chart
+    createRevenueChart(results.totalAnnualCommissions, results.retentionRate);
+}
+
+// Chart instance variable to track existing chart
+let revenueChartInstance = null;
+
+function createRevenueChart(annualCommissions, retentionRate) {
+    const ctx = document.getElementById('revenueChart');
+    if (!ctx) return;
+    
+    // Destroy existing chart if it exists
+    if (revenueChartInstance) {
+        revenueChartInstance.destroy();
+    }
+    
+    // Calculate retention for each year
+    const retentionDeclinePerYear = (100 - retentionRate) / 5;
+    const year2Retention = 100 - (retentionDeclinePerYear * 2);
+    const year3Retention = 100 - (retentionDeclinePerYear * 3);
+    const year4Retention = 100 - (retentionDeclinePerYear * 4);
+    const year5Retention = retentionRate;
+    
+    // Calculate revenue for each year
+    const year2Revenue = annualCommissions * (year2Retention / 100);
+    const year3Revenue = annualCommissions * (year3Retention / 100);
+    const year4Revenue = annualCommissions * (year4Retention / 100);
+    const year5Revenue = annualCommissions * (year5Retention / 100);
+    
+    // Create the chart
+    revenueChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Year 2', 'Year 3', 'Year 4', 'Year 5'],
+            datasets: [{
+                label: 'Annual Revenue',
+                data: [year2Revenue, year3Revenue, year4Revenue, year5Revenue],
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: 'rgba(16, 185, 129, 1)',
+                borderWidth: 2,
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 0
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('en-US', { 
+                                    style: 'currency', 
+                                    currency: 'USD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('en-US', { 
+                                style: 'currency', 
+                                currency: 'USD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
 }
 
 function exportResults() {
