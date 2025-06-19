@@ -559,6 +559,8 @@ function calculateResults() {
         const netROI = totalIncome - totalExpenses;
         
         // Calculate projected revenue (commissions only, no bonus) with declining retention
+        // Use totalAnnualCommissions which includes all commission sources (P&C, Life, Financial)
+        // but excludes the scorecard bonus
         const projectedRevenue = calculateProjectedRevenue(totalAnnualCommissions, retentionRate);
         
         // Update UI with calculated values
